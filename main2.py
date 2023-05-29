@@ -18,8 +18,8 @@ data_atual_formatada = data_atual.strftime("%d/%m/%Y")
 data_inicial = datetime(data_atual.year, data_atual.month, 1)
 data_inicial_formatado = data_inicial.strftime("%d/%m/%Y")
 tempo_maximo = 10
-email = ''
-password = ''
+email = input(str('Digite seu email: '))
+password = input(str('Digit sua senha: '))
 urlLoanding = 'https://magalu.brainlaw.com.br/DXR.axd?r=0_2658-TvT8l'
 
 # Inicializar o driver do Selenium
