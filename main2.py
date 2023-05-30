@@ -6,26 +6,28 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 
 from pyautogui import press, write, click
-from datetime import datetime
-import time
-import requests
+from datetime import datetime, timedelta
+from getpass import getpass
 import pandas as pd
 import numpy as np
+import time
+import requests
 
 # Variáveis
+# Obter a data atual
 data_atual = datetime.now()
-data_atual_formatada = data_atual.strftime("%d/%m/%Y")
-data_inicial = datetime(data_atual.year, data_atual.month, 1)
+data_final = datetime(data_atual.year, data_atual.month, 1)- timedelta(days=1)
+data_inicial  = datetime(data_final.year, data_final.month, 1)
 data_inicial_formatado = data_inicial.strftime("%d/%m/%Y")
-tempo_maximo = 10
+data_final_formatado = data_final.strftime("%d/%m/%Y")
+tempo_maximo = 20
 email = input(str('Digite seu email: '))
-password = input(str('Digit sua senha: '))
+password = getpass('Digite sua senha: ')
 urlLoanding = 'https://magalu.brainlaw.com.br/DXR.axd?r=0_2658-TvT8l'
 
 # Inicializar o driver do Selenium
 driver = webdriver.Chrome()
-wait = WebDriverWait(driver, 10)  # Tempo limite de espera em segundos
-
+wait = WebDriverWait(driver, 20)  # Tempo limite de espera em segundos
 # Maximizar a janela do navegador
 driver.maximize_window()
 
@@ -40,7 +42,7 @@ driver.get(urlCumprimentos)
 
 # Preencher as datas iniciais e finais
 driver.find_element(By.XPATH, '//*[@id="TextBoxDtInicial"]').send_keys(data_inicial_formatado)
-driver.find_element(By.XPATH, '//*[@id="TextBoxDtFinal"]').send_keys(data_atual_formatada)
+driver.find_element(By.XPATH, '//*[@id="TextBoxDtFinal"]').send_keys(data_final_formatado)
 
 # Clicar no botão de pesquisa
 driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_btnPesquisar"]').click()
@@ -53,8 +55,11 @@ inicio = time.time()
 
 # Abrir a planilha comprovantes.xlsx
 caminho = 'comprovantes.xlsx'
-comprovantes_atualizados = []
 planilha = pd.read_excel(caminho, sheet_name='Planilha1', usecols=[0,1,2,3,4,5], engine='openpyxl')
+
+def atualizar_plan(message):
+    planilha.at[linha,'COMPROVANTE'] = message
+    planilha.to_excel(caminho, sheet_name='Planilha1', index=False)
 
 for linha in range(len(planilha)):
     # Ler a coluna E (PO) e D (Valor Pago)
@@ -65,19 +70,18 @@ for linha in range(len(planilha)):
 
     while True:
         # Calcular o tempo decorrido
-        tempo_decorrido = time.time() - inicio
-
-        # Limpando os campos
-        time.sleep(1)
-        driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol58_I"]').send_keys((Keys.BACKSPACE * 7))
-        time.sleep(5)
-        driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol16_I"]').send_keys((Keys.BACKSPACE * 10))
-        time.sleep(5)
-
+        tempo_inicial = time.time() - inicio
+        if linha != 0:
+            # Limpando os campos
+            driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol16_I"]').send_keys((Keys.BACKSPACE * 10))
+            time.sleep(5)
+            driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol58_I"]').send_keys((Keys.BACKSPACE * 7))
+            time.sleep(5)
+        
         # Preencher a PO
         po_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol58_I"]')
         po_elemento.send_keys(Po)
-        time.sleep(3)
+        time.sleep(5)
 
         # Armazenar a janela original
         original_window = driver.current_window_handle
@@ -93,13 +97,13 @@ for linha in range(len(planilha)):
 
             if valor_total == '0,00':
                 print(f'PO {Po} não encontrada')
-                comprovantes_atualizados.append(f'PO {Po} não encontrada')
+                atualizar_plan(f'PO {Po} não encontrada')
                 break
             valor_total = valor_total.replace('.','')
             if valor_total != ValorPago:
                 valor_pago_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol16_I"]')
                 valor_pago_elemento.send_keys(ValorPago)
-                time.sleep(3)
+                time.sleep(5)
 
                 # Atualizar o valor total
                 valor_total = valor_total_elemento.text
@@ -107,7 +111,7 @@ for linha in range(len(planilha)):
                 # Verificar se o valor pago ainda é diferente do valor total
                 if ValorPago != valor_total:
                     print('Valores diferentes do informado.')
-                    comprovantes_atualizados.append('Valores diferentes do informado.')
+                    atualizar_plan('Valores diferentes do informado.')
                     break
 
             try:
@@ -115,7 +119,7 @@ for linha in range(len(planilha)):
                 wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_cell0_66_tbComprovante_0"]/tbody/tr/td/a/img')))
             except NoSuchElementException:
                 print(f'Comprovante da PO {Po} não encontrado')
-                comprovantes_atualizados.append(f'Comprovante da PO {Po} não encontrado')
+                atualizar_plan(f'Comprovante da PO {Po} não encontrado')
                 break
 
             # Clicar no comprovante
@@ -153,20 +157,14 @@ for linha in range(len(planilha)):
             driver.close()
             driver.switch_to.window(original_window)
             print(f'Comprovante da PO {Po} pronto.')
-            comprovantes_atualizados.append(f'Comprovante da PO {Po} pronto.')
+            atualizar_plan(f'Comprovante da PO {Po} pronto.')
             break
 
         # Verificar se o tempo máximo foi excedido
-        if tempo_decorrido >= tempo_maximo:
+        if tempo_inicial >= tempo_maximo:
             print("Tempo limite excedido.")
             break
 
-# Adicionar os resultados atualizados ao DataFrame
-planilha['COMPROVANTE'] = comprovantes_atualizados
-
-# Salvar a nova planilha
-planilha.to_excel('comprovantes_atualizados.xlsx', index=False)
-
 print("Saindo...")
-time.sleep(10)
+time.sleep(2)
 driver.quit()
