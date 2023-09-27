@@ -1,3 +1,4 @@
-main.py
-comprovantes_atualizados.xlsx
+teste.py
 pyinstaller.exe
+chromedriver.exe
+.env
