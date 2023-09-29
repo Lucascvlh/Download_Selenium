@@ -1,3 +1,6 @@
 pyinstaller.exe
 chromedriver.exe
 .env
+build
+dist
+main.spec
