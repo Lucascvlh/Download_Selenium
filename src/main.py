@@ -1,4 +1,6 @@
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -17,7 +19,7 @@ load_dotenv()
 data_inicial = input('Data inicial: ')
 data_final = input('Data Final: ')
 
-driver = webdriver.Chrome()
+driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
 wait = WebDriverWait(driver, 30)
 
 driver.maximize_window()
@@ -44,68 +46,71 @@ def atualizar_plan(message):
     planilha.to_excel(caminho, sheet_name='Planilha1', index=False)
 
 for linha in range(len(planilha)):
-    if np.isnan(planilha.at[linha,'Nº PO']):
-        continue
-    Po = str(planilha.at[linha,'Nº PO']).split('.')[0]
-    ValorPago = format(planilha.at[linha,'DÉBITO'],'.2f').replace('.',',')
-    
-    driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol58_I"]').clear()
-    wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXDataRow1"]/td[1]/a')))
-
-    po_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol58_I"]')
-    po_elemento.send_keys(Po)
-    receivedPo = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXDataRow0"]/td[49]').text
-    while str(Po) != str(receivedPo):
-        if str(receivedPo) != '':
-            time.sleep(1)
-        else:
-            print(f'PO {Po} não encontrada.')
-            atualizar_plan(f'PO {Po} não encontrada.')
+    if not np.isnan(planilha.at[linha,'Nº PO']):
+        if not pd.isna(planilha.at[linha, 'COMPROVANTE']):
             continue
+    try:
+        Po = str(planilha.at[linha,'Nº PO']).split('.')[0]
+        ValorPago = format(planilha.at[linha,'DÉBITO'],'.2f').replace('.',',')
+        
+        driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol58_I"]').clear()
+        wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXDataRow1"]/td[1]/a')))
+
+        po_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXFREditorcol58_I"]')
+        po_elemento.send_keys(Po)
         receivedPo = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXDataRow0"]/td[49]').text
+        while str(Po) != str(receivedPo):
+            if str(receivedPo) != '':
+                time.sleep(1)
+            else:
+                print(f'PO {Po} não encontrada.')
+                atualizar_plan(f'PO {Po} não encontrada.')
+                continue
+            receivedPo = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXDataRow0"]/td[49]').text
 
-    valor_total_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXDataRow0"]/td[17]').text
-    if  valor_total_elemento == ValorPago:
-        try:
-            # Aguardar a visibilidade do comprovante
-            wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_cell0_66_tbComprovante_0"]/tbody/tr/td/a/img')))
-        except Exception as e:
-            print(f'Exceção capturada: {str(e)}')
-            print(f'Comprovante da PO {Po} não encontrado')
-            atualizar_plan(f'Comprovante da PO {Po} não encontrado')
+        valor_total_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_DXDataRow0"]/td[17]').text
+        if  valor_total_elemento == ValorPago:
+            try:
+                driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_cell0_66_tbComprovante_0"]/tbody/tr/td/a/img')
+            except NoSuchElementException:
+                print(f'Comprovante da PO {Po} não encontrado')
+                atualizar_plan(f'Comprovante da PO {Po} não encontrado')
+                continue
+        else:
+            print('Valores divergentes, analisar.')
+            atualizar_plan('Valores divergentes, analisar.')
             continue
-    else:
-        print('Valores divergentes, analisar.')
-        atualizar_plan('Valores divergentes, analisar.')
+        comprovante_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_cell0_66_tbComprovante_0"]/tbody/tr/td/a/img')
+        comprovante_elemento.click()
+
+        wait.until(EC.number_of_windows_to_be(2))
+
+        for window_handle in driver.window_handles:
+            if window_handle != original_window:
+                driver.switch_to.window(window_handle)
+                break
+
+        wait.until(EC.url_contains('https://magalu.brainlaw.com.br/api/processo/documento'))
+
+        driver.execute_script("window.print();")
+        time.sleep(5)
+
+        position = driver.get_window_position()
+        x = position['x']
+        y = position['y']
+        click(x, y)
+        press('Enter')
+        time.sleep(5)
+        write(Po)
+        press('Enter')
+        time.sleep(1)
+        driver.close()
+        driver.switch_to.window(original_window)
+        print(f'Comprovante da PO {Po} pronto.')
+        atualizar_plan(f'Comprovante da PO {Po} pronto.')
+    except NoSuchElementException:
+        atualizar_plan(f'PO {Po} não encontrada.')
         continue
-    comprovante_elemento = driver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_ASPxgvPrazos_cell0_66_tbComprovante_0"]/tbody/tr/td/a/img')
-    comprovante_elemento.click()
-
-    wait.until(EC.number_of_windows_to_be(2))
-
-    for window_handle in driver.window_handles:
-        if window_handle != original_window:
-            driver.switch_to.window(window_handle)
-            break
-
-    wait.until(EC.url_contains('https://magalu.brainlaw.com.br/api/processo/documento'))
-
-    driver.execute_script("window.print();")
-    time.sleep(5)
-
-    position = driver.get_window_position()
-    x = position['x']
-    y = position['y']
-    click(x, y)
-    press('Enter')
-    time.sleep(5)
-    write(Po)
-    press('Enter')
-    time.sleep(1)
-    driver.close()
-    driver.switch_to.window(original_window)
-    print(f'Comprovante da PO {Po} pronto.')
-    atualizar_plan(f'Comprovante da PO {Po} pronto.')
 print("Saindo...")
 time.sleep(2)
 driver.quit()
